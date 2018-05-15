@@ -2,8 +2,9 @@ package com.verily.server
 
 import akka.actor.{ ActorRef, ActorSystem }
 import akka.event.Logging
+import akka.http.scaladsl.model.{ HttpResponse, StatusCodes }
 import akka.http.scaladsl.server.Directives._
-import akka.http.scaladsl.server.Route
+import akka.http.scaladsl.server.{ Route, StandardRoute }
 import akka.http.scaladsl.server.directives.MethodDirectives.{ delete, get, post }
 import akka.http.scaladsl.server.directives.PathDirectives.path
 import akka.http.scaladsl.server.directives.RouteDirectives.complete
@@ -13,6 +14,7 @@ import com.verily.server.WorkflowActor._
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.util.{ Failure, Success }
 
 // WorkflowRoutes implements the 'workflows' endpoint in WES
 trait WorkflowRoutes extends JsonSupport {
@@ -40,9 +42,29 @@ trait WorkflowRoutes extends JsonSupport {
             },
             post {
               entity(as[WorkflowRequest]) { workflowRequest =>
-                val requested: Future[String] =
-                  (workflowActor ? PostWorkflow(workflowRequest)).mapTo[String]
-                complete(requested)
+                val requested: Future[WesResponse] =
+                  (workflowActor ? PostWorkflow(workflowRequest)).mapTo[WesResponse]
+
+                // TODO: this is ugly, but the onComplete returns Unit and I haven't figured out
+                // how to return values out of it except by using this var.
+                var sr: StandardRoute = complete(StatusCodes.InternalServerError)
+                requested.onComplete {
+                  case Success(wesResponse) => {
+                    wesResponse match {
+                      case workflowId: WesResponseWorkflowId =>
+                        sr = complete(StatusCodes.Created, workflowId)
+                      case errorResponse: WesResponseError =>
+                        sr = complete(errorResponse.status_code, errorResponse)
+                    }
+                  }
+                  case Failure(_) => {
+                    sr = complete(
+                      StatusCodes.InternalServerError,
+                      WesResponseError("PostWorkflow processing error", StatusCodes.InternalServerError.intValue)
+                    )
+                  }
+                }
+                sr
               }
             }
           )

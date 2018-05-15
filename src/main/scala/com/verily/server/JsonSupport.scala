@@ -11,7 +11,7 @@ trait JsonSupport extends SprayJsonSupport {
   // The order of implicits seems to be important; they have to come in reference order.
   // TODO: tried and failed to get this code to live with WorkflowState.scala. Never figured out why.
   implicit object WorkflowStateFormat extends RootJsonFormat[WorkflowState] {
-    def write(obj: WorkflowState): JsValue = JsString(obj.toString())
+    def write(obj: WorkflowState): JsValue = JsString(obj.toString)
 
     // TODO: not sure this works and nothing in the code tests it right now
     def read(json: JsValue): WorkflowState = {
@@ -29,4 +29,7 @@ trait JsonSupport extends SprayJsonSupport {
   implicit val workflowLogFormat = jsonFormat6(WorkflowLog)
   implicit val workflowTypeVersionFormat = jsonFormat1(WorkflowTypeVersion)
   implicit val errorResponseFormat = jsonFormat2(ErrorResponse)
+
+  implicit val wesResponseError = jsonFormat2(WesResponseError)
+  implicit val wesResponseWorkflowId = jsonFormat1(WesResponseWorkflowId)
 }
