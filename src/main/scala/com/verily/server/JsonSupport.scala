@@ -21,7 +21,7 @@ trait JsonSupport extends SprayJsonSupport {
       }
     }
   }
-
+  // WES structures
   implicit val workflowDescriptionFormat = jsonFormat2(WorkflowDescription)
   implicit val workflowListResponseFormat = jsonFormat1(WorkflowListResponse)
   implicit val workflowLogEntryFormat = jsonFormat7(WorkflowLogEntry)
@@ -29,7 +29,6 @@ trait JsonSupport extends SprayJsonSupport {
   implicit val workflowLogFormat = jsonFormat6(WorkflowLog)
   implicit val workflowTypeVersionFormat = jsonFormat1(WorkflowTypeVersion)
   implicit val errorResponseFormat = jsonFormat2(ErrorResponse)
-
   implicit val wesResponseError = jsonFormat2(WesResponseError)
   implicit val wesResponseWorkflowId = jsonFormat1(WesResponseWorkflowId)
 }

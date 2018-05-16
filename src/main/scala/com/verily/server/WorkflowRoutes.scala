@@ -42,29 +42,22 @@ trait WorkflowRoutes extends JsonSupport {
             },
             post {
               entity(as[WorkflowRequest]) { workflowRequest =>
-                val requested: Future[WesResponse] =
-                  (workflowActor ? PostWorkflow(workflowRequest)).mapTo[WesResponse]
-
-                // TODO: this is ugly, but the onComplete returns Unit and I haven't figured out
-                // how to return values out of it except by using this var.
-                var sr: StandardRoute = complete(StatusCodes.InternalServerError)
-                requested.onComplete {
+                onComplete(workflowActor.ask(workflowRequest).mapTo[WesResponse]) {
                   case Success(wesResponse) => {
                     wesResponse match {
                       case workflowId: WesResponseWorkflowId =>
-                        sr = complete(StatusCodes.Created, workflowId)
+                        complete(StatusCodes.Created, workflowId)
                       case errorResponse: WesResponseError =>
-                        sr = complete(errorResponse.status_code, errorResponse)
+                        complete(errorResponse.status_code, errorResponse)
                     }
                   }
                   case Failure(_) => {
-                    sr = complete(
+                    complete(
                       StatusCodes.InternalServerError,
                       WesResponseError("PostWorkflow processing error", StatusCodes.InternalServerError.intValue)
                     )
                   }
                 }
-                sr
               }
             }
           )

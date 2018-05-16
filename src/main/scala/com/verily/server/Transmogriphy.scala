@@ -8,11 +8,12 @@ import akka.util.ByteString
 import akka.http.scaladsl.model.Multipart.FormData
 import akka.http.scaladsl.model.Multipart.FormData.BodyPart
 import akka.http.scaladsl.unmarshalling.Unmarshal
+import akka.stream.Materializer
 
-import scala.concurrent.Future
-import scala.util.{ Failure, Success }
+import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success}
 
-object Transmogriphy {
+class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) extends JsonSupport {
 
   val cromwellPath = "http://localhost:8000/api/workflows/v1"
 
@@ -25,7 +26,7 @@ object Transmogriphy {
     )
   }
 
-  def postWorkflow(workflowRequest: WorkflowRequest): HttpResponse = {
+  def postWorkflow(workflowRequest: WorkflowRequest): WesResponse = {
     /*
      * See https://docs.google.com/document/d/11_qHPBbEg3Hr4Vs3lh3dvU0dLl1I2zt6rmNxEkW1U1U/edit#
      * for details on the workflow request mapping.
@@ -40,12 +41,12 @@ object Transmogriphy {
       BodyPart("workflowSource", makeJsonEntity(workflowRequest.workflow_descriptor))
     )
 
-    params.workflowOptions match {
-      case Some(x) => parts = BodyPart("workflowOptions", makeJsonEntity(x)) :: parts
+    if (params.workflowOptions.isDefined) {
+      parts = BodyPart("workflowOptions", makeJsonEntity(params.workflowOptions.get)) :: parts
     }
 
-    params.dependenciesZip() match {
-      case Some(x) => parts = BodyPart("workflowOptions", makeTextEntity(x)) :: parts
+    if (params.workflowDependencies.isDefined) {
+      parts = BodyPart("workflowOptions", makeTextEntity(params.dependenciesZip().get)) :: parts
     }
 
     val onHold: String = if (params.workflowOnHold.getOrElse(false)) "true" else "false"
@@ -55,28 +56,30 @@ object Transmogriphy {
     val request = HttpRequest(method = HttpMethods.POST, uri = cromwellPath, entity = formData.toEntity)
     val responseFuture = Http().singleRequest(request)
 
+    // TODO: this is ugly, but onComplete returns Unit, so brute force way to get the right result out
+    var wesResponse: WesResponse = WesResponseError("Http request error", StatusCodes.InternalServerError.intValue)
     responseFuture.onComplete {
       case Success(response) => {
         response.status match {
           case StatusCodes.Created => {
-            Unmarshal(response.entity).to[CromwellPostResponse].onComplete {
-              case Success(cromwellPostResponse) => {
-                WesResponseWorkflowId(cromwellPostResponse.id)
-              }
-              case Failure(_) =>
-                WesResponseError("Failed to parse Cromwell response", StatusCodes.InternalServerError.intValue)
-            }
+            val json: String = response.entity.toString
+            val cromwellPostResponse: CromwellPostResponse = CromwellPostResponse.toCromwellPostResponse(json)
+            wesResponse = WesResponseWorkflowId(cromwellPostResponse.id)
           }
+
           case StatusCodes.BadRequest =>
-            WesResponseError("The request is malformed", response.status.intValue())
+            wesResponse = WesResponseError("The request is malformed", response.status.intValue())
 
           case StatusCodes.InternalServerError =>
-            WesResponseError("Cromwell server error", response.status.intValue())
+            wesResponse = WesResponseError("Cromwell server error", response.status.intValue())
+
+          case _ =>
+            wesResponse = WesResponseError("Unexpected response status", response.status.intValue())
         }
       }
       case Failure(_) =>
-        WesResponseError("Http request error", StatusCodes.InternalServerError.intValue)
     }
+    wesResponse
   }
 
   def makeJsonEntity(content: String): HttpEntity.Default = {

@@ -1,9 +1,7 @@
 package com.verily.server
 
 import akka.actor.{ Actor, ActorLogging, Props }
-
-// TODO: WesObject - is supposed to be an arbitrarily structured object. I'm replacing it with String for now, until
-// I learn how to deal with open-ended JSON in one of these structures.
+import scala.concurrent.ExecutionContext.Implicits.global
 
 final case class WorkflowDescription(
   workflow_id: String,
@@ -59,17 +57,18 @@ object WorkflowActor {
 
 class WorkflowActor extends Actor with ActorLogging {
   import WorkflowActor._
+  val transmogriphy = new Transmogriphy()(context.system, global)
 
   def receive: Receive = {
     case GetWorkflows =>
-      sender() ! Transmogriphy.getWorkflows()
+      sender() ! transmogriphy.getWorkflows()
     case PostWorkflow(workflowRequest) =>
-      sender() ! Transmogriphy.postWorkflow(workflowRequest)
+      sender() ! transmogriphy.postWorkflow(workflowRequest)
     case GetWorkflow(workflowId) =>
-      sender() ! Transmogriphy.getWorkflow(workflowId)
+      sender() ! transmogriphy.getWorkflow(workflowId)
     case DeleteWorkflow(workflowId) =>
-      sender() ! Transmogriphy.deleteWorkflow(workflowId)
+      sender() ! transmogriphy.deleteWorkflow(workflowId)
     case GetWorkflowStatus(workflowId) =>
-      sender() ! Transmogriphy.getWorkflowStatus(workflowId)
+      sender() ! transmogriphy.getWorkflowStatus(workflowId)
   }
 }
