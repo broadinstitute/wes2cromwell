@@ -69,6 +69,6 @@ class WorkflowActor extends Actor with ActorLogging {
     case DeleteWorkflow(workflowId) =>
       sender() ! transmogriphy.deleteWorkflow(workflowId)
     case GetWorkflowStatus(workflowId) =>
-      sender() ! transmogriphy.getWorkflowStatus(workflowId)
+      transmogriphy.getWorkflowStatus(sender(), workflowId)
   }
 }
