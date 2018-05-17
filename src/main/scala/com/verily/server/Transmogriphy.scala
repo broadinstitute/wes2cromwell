@@ -7,13 +7,17 @@ import akka.stream.scaladsl.Source
 import akka.util.ByteString
 import akka.http.scaladsl.model.Multipart.FormData
 import akka.http.scaladsl.model.Multipart.FormData.BodyPart
-import akka.http.scaladsl.unmarshalling.Unmarshal
-import akka.stream.Materializer
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success}
+import akka.http.scaladsl.unmarshalling.Unmarshal
+import akka.stream.{ActorMaterializer, Materializer}
+import spray.json.JsonFormat
+import spray.json.DefaultJsonProtocol._
 
-class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) extends JsonSupport {
+import scala.concurrent.duration._
+
+class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
 
   val cromwellPath = "http://localhost:8000/api/workflows/v1"
 
@@ -31,26 +35,33 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) extends 
      * See https://docs.google.com/document/d/11_qHPBbEg3Hr4Vs3lh3dvU0dLl1I2zt6rmNxEkW1U1U/edit#
      * for details on the workflow request mapping.
      */
-    val params = WorkflowParams.toWorkflowParams(workflowRequest.workflow_params)
 
     // Build the list of parts
     // TODO: would it be better to use a mutable list instead of re-creating each time?
     var parts = List(
       BodyPart("workflowType", makeTextEntity(workflowRequest.workflow_type)),
       BodyPart("workflowTypeVersion", makeTextEntity(workflowRequest.workflow_type_version)),
-      BodyPart("workflowSource", makeJsonEntity(workflowRequest.workflow_descriptor))
     )
 
-    if (params.workflowOptions.isDefined) {
-      parts = BodyPart("workflowOptions", makeJsonEntity(params.workflowOptions.get)) :: parts
+    if (workflowRequest.workflow_descriptor.isDefined) {
+      parts = BodyPart("workflowSource", makeJsonEntity(workflowRequest.workflow_descriptor.get)) :: parts
     }
 
-    if (params.workflowDependencies.isDefined) {
-      parts = BodyPart("workflowOptions", makeTextEntity(params.dependenciesZip().get)) :: parts
-    }
+    // Params are optional as are all of the parts in the Cromwell request that are drawn from
+    if (workflowRequest.workflow_params.isDefined) {
+      val params = WorkflowParams.toWorkflowParams(workflowRequest.workflow_params.get)
 
-    val onHold: String = if (params.workflowOnHold.getOrElse(false)) "true" else "false"
-    parts = BodyPart("workflowOnHold", makeTextEntity(onHold)) :: parts
+      if (params.workflowOptions.isDefined) {
+        parts = BodyPart("workflowOptions", makeJsonEntity(params.workflowOptions.get)) :: parts
+      }
+
+      if (params.workflowDependencies.isDefined) {
+        parts = BodyPart("workflowOptions", makeTextEntity(params.dependenciesZip().get)) :: parts
+      }
+
+      val onHold: String = if (params.workflowOnHold.getOrElse(false)) "true" else "false"
+      parts = BodyPart("workflowOnHold", makeTextEntity(onHold)) :: parts
+    }
 
     val formData = FormData(Source(parts))
     val request = HttpRequest(method = HttpMethods.POST, uri = cromwellPath, entity = formData.toEntity)
@@ -62,8 +73,12 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) extends 
       case Success(response) => {
         response.status match {
           case StatusCodes.Created => {
-            val json: String = response.entity.toString
-            val cromwellPostResponse: CromwellPostResponse = CromwellPostResponse.toCromwellPostResponse(json)
+            // TODO: another "bad thing". The Unmarshall returns a future, but the whole response is already
+            // retrieved, so there should be nothing to wait for. I'm guessing there is a better way to this
+            implicit val materializer: Materializer = ActorMaterializer()
+            val bodyDataFuture : Future[String] = Unmarshal(response.entity).to[String]
+            val bodyData : String = Await.result(bodyDataFuture, 1.second)
+            val cromwellPostResponse : CromwellPostResponse = CromwellPostResponse.toCromwellPostResponse(bodyData)
             wesResponse = WesResponseWorkflowId(cromwellPostResponse.id)
           }
 
@@ -96,13 +111,13 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) extends 
     Some(WorkflowLog(
       workflowId,
       WorkflowRequest(
-        "Say hello family",
-        "params",
+        Some("Say hello family"),
+        Some("params"),
         "WDL",
         "1.2.3",
-        "tags are keys and values in some format",
-        "engine params",
-        "url"
+        Some("tags are keys and values in some format"),
+        Some("engine params"),
+        Some("url")
       ),
       WorkflowState.EXECUTOR_ERROR,
       WorkflowLogEntry("Workflow Family", Seq("hello world"), "start", "end", "stdout", "stderr", 99),

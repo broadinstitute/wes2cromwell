@@ -27,7 +27,7 @@ trait WorkflowRoutes extends JsonSupport {
   def workflowActor: ActorRef
 
   // Required by the `ask` (?) method below
-  implicit lazy val timeout = Timeout(5.seconds) // usually we'd obtain the timeout from the system's configuration
+  implicit lazy val timeout = Timeout(15.seconds) // usually we'd obtain the timeout from the system's configuration
 
   lazy val workflowRoutes: Route =
     // TODO: factor the top of this into a path prefix in WesServer
@@ -42,19 +42,20 @@ trait WorkflowRoutes extends JsonSupport {
             },
             post {
               entity(as[WorkflowRequest]) { workflowRequest =>
-                onComplete(workflowActor.ask(workflowRequest).mapTo[WesResponse]) {
+                implicit lazy val timeout = Timeout(5.minutes)
+                onComplete(workflowActor.ask(PostWorkflow(workflowRequest)).mapTo[WesResponse]) {
                   case Success(wesResponse) => {
                     wesResponse match {
-                      case workflowId: WesResponseWorkflowId =>
+                      case WesResponseWorkflowId(workflowId) =>
                         complete(StatusCodes.Created, workflowId)
-                      case errorResponse: WesResponseError =>
-                        complete(errorResponse.status_code, errorResponse)
+                      case WesResponseError(msg, status_code) =>
+                        complete(status_code, WesResponseError(msg, status_code))
                     }
                   }
-                  case Failure(_) => {
+                  case Failure(ex) => {
                     complete(
                       StatusCodes.InternalServerError,
-                      WesResponseError("PostWorkflow processing error", StatusCodes.InternalServerError.intValue)
+                      WesResponseError(s"PostWorkflow exception: ${ex.getMessage}", StatusCodes.InternalServerError.intValue)
                     )
                   }
                 }

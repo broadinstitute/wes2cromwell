@@ -1,7 +1,7 @@
 package com.verily.server
 
 import spray.json.DefaultJsonProtocol.jsonFormat2
-import spray.json.{DefaultJsonProtocol, JsonFormat, JsonParser}
+import spray.json.{ DefaultJsonProtocol, JsonFormat, JsonParser }
 
 case class CromwellPostResponse(id: String, status: String)
 
