@@ -46,8 +46,8 @@ trait WorkflowRoutes extends JsonSupport {
                 onComplete(workflowActor.ask(PostWorkflow(workflowRequest)).mapTo[WesResponse]) {
                   case Success(wesResponse) => {
                     wesResponse match {
-                      case WesResponseWorkflowId(workflowId) =>
-                        complete(StatusCodes.Created, workflowId)
+                      case WesResponseWorkflowId(workflow_id) =>
+                        complete(StatusCodes.Created, WesResponseWorkflowId(workflow_id))
                       case WesResponseError(msg, status_code) =>
                         complete(status_code, WesResponseError(msg, status_code))
                     }

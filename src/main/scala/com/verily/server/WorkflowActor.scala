@@ -63,7 +63,7 @@ class WorkflowActor extends Actor with ActorLogging {
     case GetWorkflows =>
       sender() ! transmogriphy.getWorkflows()
     case PostWorkflow(workflowRequest) =>
-      sender() ! transmogriphy.postWorkflow(workflowRequest)
+      transmogriphy.postWorkflow(sender(), workflowRequest)
     case GetWorkflow(workflowId) =>
       sender() ! transmogriphy.getWorkflow(workflowId)
     case DeleteWorkflow(workflowId) =>
