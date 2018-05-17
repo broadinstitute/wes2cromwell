@@ -2,8 +2,9 @@ package com.verily.server
 
 import akka.actor.{ ActorRef, ActorSystem }
 import akka.event.Logging
+import akka.http.scaladsl.model.{ HttpResponse, StatusCodes }
 import akka.http.scaladsl.server.Directives._
-import akka.http.scaladsl.server.Route
+import akka.http.scaladsl.server.{ Route, StandardRoute }
 import akka.http.scaladsl.server.directives.MethodDirectives.{ delete, get, post }
 import akka.http.scaladsl.server.directives.PathDirectives.path
 import akka.http.scaladsl.server.directives.RouteDirectives.complete
@@ -13,6 +14,7 @@ import com.verily.server.WorkflowActor._
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.util.{ Failure, Success }
 
 // WorkflowRoutes implements the 'workflows' endpoint in WES
 trait WorkflowRoutes extends JsonSupport {
@@ -25,7 +27,7 @@ trait WorkflowRoutes extends JsonSupport {
   def workflowActor: ActorRef
 
   // Required by the `ask` (?) method below
-  implicit lazy val timeout = Timeout(5.seconds) // usually we'd obtain the timeout from the system's configuration
+  implicit lazy val timeout = Timeout(15.seconds) // usually we'd obtain the timeout from the system's configuration
 
   lazy val workflowRoutes: Route =
     // TODO: factor the top of this into a path prefix in WesServer
@@ -40,9 +42,23 @@ trait WorkflowRoutes extends JsonSupport {
             },
             post {
               entity(as[WorkflowRequest]) { workflowRequest =>
-                val requested: Future[String] =
-                  (workflowActor ? PostWorkflow(workflowRequest)).mapTo[String]
-                complete(requested)
+                implicit lazy val timeout = Timeout(5.minutes)
+                onComplete(workflowActor.ask(PostWorkflow(workflowRequest)).mapTo[WesResponse]) {
+                  case Success(wesResponse) => {
+                    wesResponse match {
+                      case WesResponseWorkflowId(workflowId) =>
+                        complete(StatusCodes.Created, workflowId)
+                      case WesResponseError(msg, status_code) =>
+                        complete(status_code, WesResponseError(msg, status_code))
+                    }
+                  }
+                  case Failure(ex) => {
+                    complete(
+                      StatusCodes.InternalServerError,
+                      WesResponseError(s"PostWorkflow exception: ${ex.getMessage}", StatusCodes.InternalServerError.intValue)
+                    )
+                  }
+                }
               }
             }
           )

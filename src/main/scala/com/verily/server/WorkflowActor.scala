@@ -1,9 +1,7 @@
 package com.verily.server
 
 import akka.actor.{ Actor, ActorLogging, Props }
-
-// TODO: WesObject - is supposed to be an arbitrarily structured object. I'm replacing it with String for now, until
-// I learn how to deal with open-ended JSON in one of these structures.
+import scala.concurrent.ExecutionContext.Implicits.global
 
 final case class WorkflowDescription(
   workflow_id: String,
@@ -23,13 +21,13 @@ final case class WorkflowLogEntry(
 )
 
 final case class WorkflowRequest(
-  workflow_descriptor: String, // this is the CWL or WDL document or base64 encded gzip??
-  workflow_params: String /* WesObject */ , // workflow parameterization document
+  workflow_descriptor: Option[String], // this is the CWL or WDL document or base64 encded gzip??
+  workflow_params: Option[String], // workflow parameterization document
   workflow_type: String, // "CWL" or "WDL" or other
   workflow_type_version: String,
-  tags: String, // TODO: type: object -> key value map of arbitrary metadata to tag the workflow. What are the valid types of tag keys? tag values?
-  workflow_engine_parameters: String, // TODO: type: object -> optional parameters for the workflow engine - format vague/not-specified
-  workflow_url: String
+  tags: Option[String], // TODO: type: object -> key value map of arbitrary metadata to tag the workflow. What are the valid types of tag keys? tag values?
+  workflow_engine_parameters: Option[String], // TODO: type: object -> optional parameters for the workflow engine - format vague/not-specified
+  workflow_url: Option[String]
 )
 
 final case class WorkflowLog(
@@ -59,17 +57,18 @@ object WorkflowActor {
 
 class WorkflowActor extends Actor with ActorLogging {
   import WorkflowActor._
+  lazy val transmogriphy = new Transmogriphy()(context.system, global)
 
   def receive: Receive = {
     case GetWorkflows =>
-      sender() ! Transmogriphy.getWorkflows()
+      sender() ! transmogriphy.getWorkflows()
     case PostWorkflow(workflowRequest) =>
-      sender() ! Transmogriphy.postWorkflow(workflowRequest)
+      sender() ! transmogriphy.postWorkflow(workflowRequest)
     case GetWorkflow(workflowId) =>
-      sender() ! Transmogriphy.getWorkflow(workflowId)
+      sender() ! transmogriphy.getWorkflow(workflowId)
     case DeleteWorkflow(workflowId) =>
-      sender() ! Transmogriphy.deleteWorkflow(workflowId)
+      sender() ! transmogriphy.deleteWorkflow(workflowId)
     case GetWorkflowStatus(workflowId) =>
-      sender() ! Transmogriphy.getWorkflowStatus(workflowId)
+      sender() ! transmogriphy.getWorkflowStatus(workflowId)
   }
 }
