@@ -1,6 +1,6 @@
 package com.verily.server
 
-import akka.actor.ActorSystem
+import akka.actor.{ActorRef, ActorSystem}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model._
 import akka.stream.scaladsl.Source
@@ -30,7 +30,7 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
     )
   }
 
-  def postWorkflow(workflowRequest: WorkflowRequest): WesResponse = {
+  def postWorkflow(replyTo: ActorRef, workflowRequest: WorkflowRequest): Unit = {
     /*
      * See https://docs.google.com/document/d/11_qHPBbEg3Hr4Vs3lh3dvU0dLl1I2zt6rmNxEkW1U1U/edit#
      * for details on the workflow request mapping.
@@ -59,8 +59,19 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
         parts = BodyPart("workflowOptions", makeTextEntity(params.dependenciesZip().get)) :: parts
       }
 
+      for ((input, index) <- params.workflowInputs.zipWithIndex) {
+        val suffix: String = if (index == 0) "" else s"_${index + 1}"
+        parts = BodyPart("workflowInputs" + suffix, makeTextEntity(input)) :: parts
+      }
+
+/* TODO: putting in this text results in a "malformed" error from Cromwell.
+ * Not sure how this is supposed to be presented in the multipart form.
+ * Leave it out for now.
+ */
+/*
       val onHold: String = if (params.workflowOnHold.getOrElse(false)) "true" else "false"
       parts = BodyPart("workflowOnHold", makeTextEntity(onHold)) :: parts
+*/
     }
 
     val formData = FormData(Source(parts))
@@ -68,7 +79,6 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
     val responseFuture = Http().singleRequest(request)
 
     // TODO: this is ugly, but onComplete returns Unit, so brute force way to get the right result out
-    var wesResponse: WesResponse = WesResponseError("Http request error", StatusCodes.InternalServerError.intValue)
     responseFuture.onComplete {
       case Success(response) => {
         response.status match {
@@ -79,22 +89,22 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
             val bodyDataFuture : Future[String] = Unmarshal(response.entity).to[String]
             val bodyData : String = Await.result(bodyDataFuture, 1.second)
             val cromwellPostResponse : CromwellPostResponse = CromwellPostResponse.toCromwellPostResponse(bodyData)
-            wesResponse = WesResponseWorkflowId(cromwellPostResponse.id)
+            replyTo ! WesResponseWorkflowId(cromwellPostResponse.id)
           }
 
           case StatusCodes.BadRequest =>
-            wesResponse = WesResponseError("The request is malformed", response.status.intValue())
+            replyTo ! WesResponseError("The request is malformed", response.status.intValue())
 
           case StatusCodes.InternalServerError =>
-            wesResponse = WesResponseError("Cromwell server error", response.status.intValue())
+            replyTo ! WesResponseError("Cromwell server error", response.status.intValue())
 
           case _ =>
-            wesResponse = WesResponseError("Unexpected response status", response.status.intValue())
+            replyTo ! WesResponseError("Unexpected response status", response.status.intValue())
         }
       }
       case Failure(_) =>
+        replyTo ! WesResponseError("Http error", StatusCodes.InternalServerError.intValue)
     }
-    wesResponse
   }
 
   def makeJsonEntity(content: String): HttpEntity.Default = {
