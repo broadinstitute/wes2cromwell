@@ -59,8 +59,19 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
         parts = BodyPart("workflowOptions", makeTextEntity(params.dependenciesZip().get)) :: parts
       }
 
+      for ((input, index) <- params.workflowInputs.zipWithIndex) {
+        val suffix: String = if (index == 0) "" else s"_${index + 1}"
+        parts = BodyPart("workflowInputs" + suffix, makeTextEntity(input)) :: parts
+      }
+
+/* TODO: putting in this text results in a "malformed" error from Cromwell.
+ * Not sure how this is supposed to be presented in the multipart form.
+ * Leave it out for now.
+ */
+/*
       val onHold: String = if (params.workflowOnHold.getOrElse(false)) "true" else "false"
       parts = BodyPart("workflowOnHold", makeTextEntity(onHold)) :: parts
+*/
     }
 
     val formData = FormData(Source(parts))
