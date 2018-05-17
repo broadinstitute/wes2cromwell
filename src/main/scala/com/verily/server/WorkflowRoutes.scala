@@ -23,7 +23,7 @@ trait WorkflowRoutes extends JsonSupport {
 
   lazy val log = Logging(system, classOf[WorkflowRoutes])
 
-  // other dependencies that UserRoutes use
+  // other dependencies that Routes use
   def workflowActor: ActorRef
 
   // Required by the `ask` (?) method below
@@ -43,22 +43,8 @@ trait WorkflowRoutes extends JsonSupport {
             post {
               entity(as[WorkflowRequest]) { workflowRequest =>
                 implicit lazy val timeout = Timeout(5.minutes)
-                onComplete(workflowActor.ask(PostWorkflow(workflowRequest)).mapTo[WesResponse]) {
-                  case Success(wesResponse) => {
-                    wesResponse match {
-                      case WesResponseWorkflowId(workflow_id) =>
-                        complete(StatusCodes.Created, WesResponseWorkflowId(workflow_id))
-                      case WesResponseError(msg, status_code) =>
-                        complete(status_code, WesResponseError(msg, status_code))
-                    }
-                  }
-                  case Failure(ex) => {
-                    complete(
-                      StatusCodes.InternalServerError,
-                      WesResponseError(s"PostWorkflow exception: ${ex.getMessage}", StatusCodes.InternalServerError.intValue)
-                    )
-                  }
-                }
+                val futureWes: Future[Any] = workflowActor.ask(PostWorkflow(workflowRequest))
+                handleWesResponse(futureWes)
               }
             }
           )
@@ -83,13 +69,33 @@ trait WorkflowRoutes extends JsonSupport {
         // workflows/{workflow_id}/status
         path(Segment / "status") { workflowId =>
           get {
-            val maybeUser: Future[Option[WorkflowDescription]] =
-              (workflowActor ? GetWorkflowStatus(workflowId)).mapTo[Option[WorkflowDescription]]
-            rejectEmptyResponse {
-              complete(maybeUser)
-            }
+            val futureWes: Future[Any] = workflowActor.ask(GetWorkflowStatus(workflowId))
+            handleWesResponse(futureWes)
           }
         }
       )
     }
+
+  // Common handler for some Wes Responses
+  def handleWesResponse(futureWes: Future[Any]) = {
+    onComplete(futureWes.mapTo[WesResponse]) {
+      case Success(wesResponse) => {
+        wesResponse match {
+          case WesResponseWorkflowId(workflow_id) =>
+            complete(StatusCodes.Created, WesResponseWorkflowId(workflow_id))
+          case WesResponseStatus(workflow_id, state) =>
+            complete(StatusCodes.OK, WesResponseStatus(workflow_id, state))
+          case WesResponseError(msg, status_code) =>
+            complete(status_code, WesResponseError(msg, status_code))
+        }
+      }
+      case Failure(ex) => {
+        complete(
+          StatusCodes.InternalServerError,
+          WesResponseError(s"PostWorkflow exception: ${ex.getMessage}", StatusCodes.InternalServerError.intValue)
+        )
+      }
+    }
+  }
+
 }

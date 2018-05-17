@@ -12,6 +12,7 @@ import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success}
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.{ActorMaterializer, Materializer}
+import com.verily.server.WorkflowState._
 import spray.json.JsonFormat
 import spray.json.DefaultJsonProtocol._
 
@@ -78,7 +79,6 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
     val request = HttpRequest(method = HttpMethods.POST, uri = cromwellPath, entity = formData.toEntity)
     val responseFuture = Http().singleRequest(request)
 
-    // TODO: this is ugly, but onComplete returns Unit, so brute force way to get the right result out
     responseFuture.onComplete {
       case Success(response) => {
         response.status match {
@@ -88,7 +88,7 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
             implicit val materializer: Materializer = ActorMaterializer()
             val bodyDataFuture : Future[String] = Unmarshal(response.entity).to[String]
             val bodyData : String = Await.result(bodyDataFuture, 1.second)
-            val cromwellPostResponse : CromwellPostResponse = CromwellPostResponse.toCromwellPostResponse(bodyData)
+            val cromwellPostResponse : CromwellStatusResponse = CromwellStatusResponse.toCromwellStatusResponse(bodyData)
             replyTo ! WesResponseWorkflowId(cromwellPostResponse.id)
           }
 
@@ -139,8 +139,48 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
     ))
   }
 
-  def getWorkflowStatus(workflowId: String): Option[WorkflowDescription] = {
-    Some(WorkflowDescription(workflowId, WorkflowState.SYSTEM_ERROR))
+  def getWorkflowStatus(replyTo: ActorRef, workflowId: String): Unit = {
+    val url: String = cromwellPath + "/" + workflowId + "/status"
+    val request = HttpRequest(method = HttpMethods.GET, uri = url)
+    val responseFuture = Http().singleRequest(request)
+    responseFuture.onComplete {
+      case Success(response) => {
+        response.status match {
+          case StatusCodes.OK => {
+            // TODO: another case of "bad thing"
+            implicit val materializer: Materializer = ActorMaterializer()
+            val bodyDataFuture : Future[String] = Unmarshal(response.entity).to[String]
+            val bodyData : String = Await.result(bodyDataFuture, 1.second)
+            val cromwellStatusResponse : CromwellStatusResponse = CromwellStatusResponse.toCromwellStatusResponse(bodyData)
+
+            val workflowState : WorkflowState =
+              cromwellStatusResponse.status match {
+                case "On Hold" => PAUSED
+                case "Submitted" => INITIALIZING
+                case "Running" => RUNNING
+                case "Aborting" => CANCELED
+                case "Aborted" => CANCELED
+                case "Succeeded" => COMPLETE
+                case "Failed" => EXECUTOR_ERROR
+                case _ => UNKNOWN
+            }
+
+            replyTo ! WesResponseStatus(cromwellStatusResponse.id, workflowState)
+          }
+
+          case StatusCodes.BadRequest =>
+            replyTo ! WesResponseError("The request is malformed", response.status.intValue())
+
+          case StatusCodes.InternalServerError =>
+            replyTo ! WesResponseError("Cromwell server error", response.status.intValue())
+
+          case _ =>
+            replyTo ! WesResponseError("Unexpected response status", response.status.intValue())
+        }
+      }
+      case Failure(_) =>
+        replyTo ! WesResponseError("Http error", StatusCodes.InternalServerError.intValue)
+    }
   }
 
   def deleteWorkflow(workflowId: String): String = {

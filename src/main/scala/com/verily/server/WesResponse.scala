@@ -7,3 +7,5 @@ case class WesResponseError(msg: String, status_code: Int) extends WesResponse
 
 case class WesResponseWorkflowId(workflow_id: String) extends WesResponse
 
+case class WesResponseStatus(workflow_id: String, state: WorkflowState) extends WesResponse
+
