@@ -27,7 +27,7 @@ trait WorkflowRoutes extends JsonSupport {
   def workflowActor: ActorRef
 
   // Required by the `ask` (?) method below
-  implicit lazy val timeout = Timeout(15.seconds) // usually we'd obtain the timeout from the system's configuration
+  implicit lazy val timeout = Timeout(30.seconds) // usually we'd obtain the timeout from the system's configuration
 
   lazy val workflowRoutes: Route =
     // TODO: factor the top of this into a path prefix in WesServer
@@ -36,13 +36,11 @@ trait WorkflowRoutes extends JsonSupport {
         pathEnd {
           concat(
             get {
-              val workflowList: Future[WorkflowListResponse] =
-                (workflowActor ? GetWorkflows).mapTo[WorkflowListResponse]
-              complete(workflowList)
+              val futureWes: Future[Any] = workflowActor.ask(GetWorkflows)
+              handleWesResponse(futureWes)
             },
             post {
               entity(as[WorkflowRequest]) { workflowRequest =>
-                implicit lazy val timeout = Timeout(5.minutes)
                 val futureWes: Future[Any] = workflowActor.ask(PostWorkflow(workflowRequest))
                 handleWesResponse(futureWes)
               }
@@ -60,9 +58,8 @@ trait WorkflowRoutes extends JsonSupport {
               }
             },
             delete {
-              val workspaceDeleted: Future[String] =
-                (workflowActor ? DeleteWorkflow(workflowId)).mapTo[String]
-              complete(workspaceDeleted)
+              val futureWes: Future[Any] = workflowActor.ask(DeleteWorkflow(workflowId))
+              handleWesResponse(futureWes)
             }
           )
         },
@@ -77,14 +74,19 @@ trait WorkflowRoutes extends JsonSupport {
     }
 
   // Common handler for some Wes Responses
+  // TODO: understand if I can avoid re-constructing the responses
   def handleWesResponse(futureWes: Future[Any]) = {
     onComplete(futureWes.mapTo[WesResponse]) {
       case Success(wesResponse) => {
         wesResponse match {
-          case WesResponseWorkflowId(workflow_id) =>
-            complete(StatusCodes.Created, WesResponseWorkflowId(workflow_id))
+          case WesResponseCreateWorkflowId(workflow_id) =>
+            complete(StatusCodes.Created, WesResponseCreateWorkflowId(workflow_id))
+          case WesResponseDeleteWorkflowId(workflow_id) =>
+            complete(StatusCodes.OK, WesResponseDeleteWorkflowId(workflow_id))
           case WesResponseStatus(workflow_id, state) =>
             complete(StatusCodes.OK, WesResponseStatus(workflow_id, state))
+          case WesResponseWorkflowList(list) =>
+            complete(StatusCodes.OK, WesResponseWorkflowList(list))
           case WesResponseError(msg, status_code) =>
             complete(status_code, WesResponseError(msg, status_code))
         }
