@@ -8,8 +8,6 @@ final case class WorkflowDescription(
   state: WorkflowState
 )
 
-final case class WorkflowListResponse(workflows: Seq[WorkflowDescription])
-
 final case class WorkflowLogEntry(
   name: String,
   cmd: Seq[String],
@@ -61,13 +59,13 @@ class WorkflowActor extends Actor with ActorLogging {
 
   def receive: Receive = {
     case GetWorkflows =>
-      sender() ! transmogriphy.getWorkflows()
+      transmogriphy.getWorkflows(sender())
     case PostWorkflow(workflowRequest) =>
       transmogriphy.postWorkflow(sender(), workflowRequest)
     case GetWorkflow(workflowId) =>
       sender() ! transmogriphy.getWorkflow(workflowId)
     case DeleteWorkflow(workflowId) =>
-      sender() ! transmogriphy.deleteWorkflow(workflowId)
+      transmogriphy.deleteWorkflow(sender(), workflowId)
     case GetWorkflowStatus(workflowId) =>
       transmogriphy.getWorkflowStatus(sender(), workflowId)
   }

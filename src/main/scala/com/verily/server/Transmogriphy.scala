@@ -1,5 +1,8 @@
 package com.verily.server
 
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+
 import akka.actor.{ActorRef, ActorSystem}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model._
@@ -22,13 +25,45 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
 
   val cromwellPath = "http://localhost:8000/api/workflows/v1"
 
-  def getWorkflows(): WorkflowListResponse = {
-    WorkflowListResponse(
-      Seq(
-        WorkflowDescription("wfid111", WorkflowState.INITIALIZING),
-        WorkflowDescription("wfid222", WorkflowState.RUNNING)
-      )
-    )
+  implicit val materializer: Materializer = ActorMaterializer()
+
+  def getWorkflows(replyTo: ActorRef): Unit = {
+    var now = ZonedDateTime.now()
+    var oneDayAgoString = now.minusDays(1).format(DateTimeFormatter.ISO_INSTANT).replace(":", "%3A")
+    var nowString = now.format(DateTimeFormatter.ISO_INSTANT).replace(":", "%3A")
+
+    val url = cromwellPath + s"/query?start=${oneDayAgoString}&end=${nowString}"
+    val request = HttpRequest(method = HttpMethods.GET, uri = url)
+    val responseFuture = Http().singleRequest(request)
+    responseFuture.onComplete {
+      case Success(response) => {
+        response.status match {
+          case StatusCodes.OK => {
+            // TODO: yet another case of "bad thing"
+            val bodyDataFuture : Future[String] = Unmarshal(response.entity).to[String]
+            val bodyData : String = Await.result(bodyDataFuture, 1.second)
+            val cromwellQueryResponse: CromwellQueryResponse = CromwellQueryResponse.toCromwellQueryResponse(bodyData)
+
+            val cromwellList : List[CromwellStatusResponse] = cromwellQueryResponse.results
+            val statusList : List[WesResponseStatus] = cromwellList.map(x => cromwellToWesStatus(x))
+            replyTo ! WesResponseWorkflowList(statusList)
+          }
+
+          case StatusCodes.BadRequest =>
+            replyTo ! WesResponseError("The request is malformed", response.status.intValue())
+
+          case StatusCodes.InternalServerError =>
+            replyTo ! WesResponseError("Cromwell server error", response.status.intValue())
+
+          case _ =>
+            replyTo ! WesResponseError("Unexpected response status", response.status.intValue())
+        }
+      }
+      case Failure(_) =>
+        replyTo ! WesResponseError("Http error", StatusCodes.InternalServerError.intValue)
+    }
+
+
   }
 
   def postWorkflow(replyTo: ActorRef, workflowRequest: WorkflowRequest): Unit = {
@@ -89,7 +124,7 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
             val bodyDataFuture : Future[String] = Unmarshal(response.entity).to[String]
             val bodyData : String = Await.result(bodyDataFuture, 1.second)
             val cromwellPostResponse : CromwellStatusResponse = CromwellStatusResponse.toCromwellStatusResponse(bodyData)
-            replyTo ! WesResponseWorkflowId(cromwellPostResponse.id)
+            replyTo ! WesResponseCreateWorkflowId(cromwellPostResponse.id)
           }
 
           case StatusCodes.BadRequest =>
@@ -148,24 +183,10 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
         response.status match {
           case StatusCodes.OK => {
             // TODO: another case of "bad thing"
-            implicit val materializer: Materializer = ActorMaterializer()
             val bodyDataFuture : Future[String] = Unmarshal(response.entity).to[String]
             val bodyData : String = Await.result(bodyDataFuture, 1.second)
             val cromwellStatusResponse : CromwellStatusResponse = CromwellStatusResponse.toCromwellStatusResponse(bodyData)
-
-            val workflowState : WorkflowState =
-              cromwellStatusResponse.status match {
-                case "On Hold" => PAUSED
-                case "Submitted" => INITIALIZING
-                case "Running" => RUNNING
-                case "Aborting" => CANCELED
-                case "Aborted" => CANCELED
-                case "Succeeded" => COMPLETE
-                case "Failed" => EXECUTOR_ERROR
-                case _ => UNKNOWN
-            }
-
-            replyTo ! WesResponseStatus(cromwellStatusResponse.id, workflowState)
+            replyTo ! cromwellToWesStatus(cromwellStatusResponse)
           }
 
           case StatusCodes.BadRequest =>
@@ -183,7 +204,54 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
     }
   }
 
-  def deleteWorkflow(workflowId: String): String = {
-    "wfid444"
+  def deleteWorkflow(replyTo: ActorRef, workflowId: String): Unit = {
+    val url: String = cromwellPath + "/" + workflowId + "/abort"
+    val request = HttpRequest(method = HttpMethods.POST, uri = url)
+    val responseFuture = Http().singleRequest(request)
+    responseFuture.onComplete {
+      case Success(response) => {
+        response.status match {
+          case StatusCodes.OK => {
+            // TODO: another case of "bad thing"
+            val bodyDataFuture : Future[String] = Unmarshal(response.entity).to[String]
+            val bodyData : String = Await.result(bodyDataFuture, 1.second)
+            val cromwellStatusResponse : CromwellStatusResponse = CromwellStatusResponse.toCromwellStatusResponse(bodyData)
+            replyTo ! WesResponseDeleteWorkflowId(cromwellStatusResponse.id)
+          }
+
+          case StatusCodes.NotFound =>
+            replyTo ! WesResponseError("The requested workflow was not found", response.status.intValue())
+
+          case StatusCodes.BadRequest =>
+            replyTo ! WesResponseError("The request is malformed", response.status.intValue())
+
+          case StatusCodes.InternalServerError =>
+            replyTo ! WesResponseError("Cromwell server error", response.status.intValue())
+
+          case _ =>
+            replyTo ! WesResponseError("Unexpected response status", response.status.intValue())
+        }
+      }
+      case Failure(_) =>
+        replyTo ! WesResponseError("Http error", StatusCodes.InternalServerError.intValue)
+    }
+
   }
+
+  def cromwellToWesStatus(cromwellStatusResponse: CromwellStatusResponse) : WesResponseStatus = {
+    val workflowState : WorkflowState =
+      cromwellStatusResponse.status match {
+        case "On Hold" => PAUSED
+        case "Submitted" => INITIALIZING
+        case "Running" => RUNNING
+        case "Aborting" => CANCELED
+        case "Aborted" => CANCELED
+        case "Succeeded" => COMPLETE
+        case "Failed" => EXECUTOR_ERROR
+        case _ => UNKNOWN
+      }
+
+    WesResponseStatus(cromwellStatusResponse.id, workflowState)
+  }
+
 }
