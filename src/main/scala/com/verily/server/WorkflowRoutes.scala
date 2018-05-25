@@ -51,11 +51,8 @@ trait WorkflowRoutes extends JsonSupport {
         path(Segment) { workflowId =>
           concat(
             get {
-              val maybeWorkflow: Future[Option[WorkflowLog]] =
-                (workflowActor ? GetWorkflow(workflowId)).mapTo[Option[WorkflowLog]]
-              rejectEmptyResponse {
-                complete(maybeWorkflow)
-              }
+              val maybeWorkflow: Future[Any] = workflowActor.ask(GetWorkflow(workflowId))
+              handleWesResponse(maybeWorkflow)
             },
             delete {
               val futureWes: Future[Any] = workflowActor.ask(DeleteWorkflow(workflowId))
@@ -89,6 +86,8 @@ trait WorkflowRoutes extends JsonSupport {
             complete(StatusCodes.OK, WesResponseWorkflowList(list))
           case WesResponseError(msg, status_code) =>
             complete(status_code, WesResponseError(msg, status_code))
+          case WesResponseWorkflowMetadata(workflowLog) =>
+            complete(StatusCodes.OK, workflowLog)
         }
       }
       case Failure(ex) => {
