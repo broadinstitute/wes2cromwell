@@ -86,6 +86,7 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
         postRequestToCromwell(replyTo, parts)
       }
       case Success(WesResponseError(msg, code)) => replyTo ! WesResponseError(msg, code)
+      case Success(_) => replyTo ! WesResponseError("Internal server error", StatusCodes.InternalServerError.intValue)
       case Failure(f) => replyTo ! WesResponseError(f.getMessage, StatusCodes.InternalServerError.intValue)
     }
   }
@@ -261,7 +262,7 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
     )
   }
 
-  def getWorkflowStatusList(bodyData: String) : List[WesResponseStatus] = {
+  def getWorkflowStatusList(bodyData: String): List[WesResponseStatus] = {
     val cromwellQueryResponse: CromwellQueryResponse = CromwellQueryResponse.toCromwellQueryResponse(bodyData)
     val cromwellList: List[CromwellStatusResponse] = cromwellQueryResponse.results
     cromwellList.map(x => WesResponseStatus(x.id, cromwellToWesStatus(x.status)))
@@ -295,32 +296,30 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
     }
   }
 
-  def getWorkflowSourceBodyPart(workflowRequest: WorkflowRequest) : Future[WesResponse] = {
+  def getWorkflowSourceBodyPart(workflowRequest: WorkflowRequest): Future[WesResponse] = {
     if (workflowRequest.workflow_descriptor.isDefined) {
       Future.successful(WesResponseBodyPart(BodyPart("workflowSource", makeJsonEntity(workflowRequest.workflow_descriptor.get))))
-    }
-    else if (workflowRequest.workflow_url.isDefined) {
+    } else if (workflowRequest.workflow_url.isDefined) {
       val request = HttpRequest(method = HttpMethods.GET, uri = workflowRequest.workflow_url.get)
       val responseFuture = Http().singleRequest(request)
 
       responseFuture.flatMap { response =>
-          response.status match {
-            case StatusCodes.OK => {
-              val bodyDataFuture: Future[String] = Unmarshal(response.entity).to[String]
-              bodyDataFuture map { bodyData =>
-                WesResponseBodyPart(BodyPart("workflowSource", makeJsonEntity(bodyData)))
-              }
+        response.status match {
+          case StatusCodes.OK => {
+            val bodyDataFuture: Future[String] = Unmarshal(response.entity).to[String]
+            bodyDataFuture map { bodyData =>
+              WesResponseBodyPart(BodyPart("workflowSource", makeJsonEntity(bodyData)))
             }
-            case StatusCodes.BadRequest => Future.successful(WesResponseError("The request is malformed", response.status.intValue()))
-
-            case StatusCodes.InternalServerError => Future.successful(WesResponseError("Cromwell server error", response.status.intValue()))
-
-            case _ => Future.successful(WesResponseError("Unexpected response status", response.status.intValue()))
           }
+          case StatusCodes.BadRequest => Future.successful(WesResponseError("The request is malformed", response.status.intValue()))
+
+          case StatusCodes.InternalServerError => Future.successful(WesResponseError("Cromwell server error", response.status.intValue()))
+
+          case _ => Future.successful(WesResponseError("Unexpected response status", response.status.intValue()))
+        }
       } recoverWith {
         case _ => Future.successful(WesResponseError("Http error", StatusCodes.InternalServerError.intValue))
       }
-    }
-    else Future.successful(WesResponseError("Workflow source not provided", StatusCodes.BadRequest.intValue))
+    } else Future.successful(WesResponseError("Workflow source not provided", StatusCodes.BadRequest.intValue))
   }
 }
