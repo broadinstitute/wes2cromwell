@@ -1,17 +1,19 @@
 package com.verily.server
 
-import akka.actor.{Actor, ActorLogging, Props}
+import akka.actor.{ Actor, ActorLogging, Props }
 import spray.json.JsObject
 
 import scala.concurrent.ExecutionContext.Implicits.global
 
-final case class WorkflowRequest(workflow_descriptor: Option[String], // this is the CWL or WDL document or base64 encoded gzip??
-                           workflow_params: Option[JsObject], // workflow parameterization document
-                           workflow_type: String, // "CWL" or "WDL" or other
-                           workflow_type_version: String,
-                           tags: Option[JsObject], // TODO: type: object -> key value map of arbitrary metadata to tag the workflow. What are the valid types of tag keys? tag values?
-                           workflow_engine_parameters: Option[JsObject], // TODO: type: object -> optional parameters for the workflow engine - format vague/not-specified
-                           workflow_url: Option[String])
+final case class WorkflowRequest(
+  workflow_descriptor: Option[String], // this is the CWL or WDL document or base64 encoded gzip??
+  workflow_params: Option[JsObject], // workflow parameterization document
+  workflow_type: String, // "CWL" or "WDL" or other
+  workflow_type_version: String,
+  tags: Option[JsObject], // TODO: type: object -> key value map of arbitrary metadata to tag the workflow. What are the valid types of tag keys? tag values?
+  workflow_engine_parameters: Option[JsObject], // TODO: type: object -> optional parameters for the workflow engine - format vague/not-specified
+  workflow_url: Option[String]
+)
 
 final case class WorkflowDescription(
   workflow_id: String,
