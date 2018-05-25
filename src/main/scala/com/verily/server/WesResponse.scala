@@ -1,5 +1,7 @@
 package com.verily.server
 
+import akka.http.scaladsl.model.Multipart.FormData.BodyPart
+
 // The WesResponse provides a trait for all possible responses to requests to the WES REST API
 sealed trait WesResponse
 
@@ -15,5 +17,5 @@ case class WesResponseWorkflowList(workflows: List[WesResponseStatus]) extends W
 
 case class WesResponseWorkflowMetadata(workflowLog: WorkflowLog) extends WesResponse
 
-//case class WesResponseUrlContent(content: String) extends WesResponse
+case class WesResponseBodyPart(bodyPart: BodyPart) extends WesResponse
 

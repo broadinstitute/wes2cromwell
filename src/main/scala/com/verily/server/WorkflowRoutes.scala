@@ -27,7 +27,7 @@ trait WorkflowRoutes extends JsonSupport {
   def workflowActor: ActorRef
 
   // Required by the `ask` (?) method below
-  implicit lazy val timeout = Timeout(30.seconds) // usually we'd obtain the timeout from the system's configuration
+  implicit lazy val timeout = Timeout(30.seconds)
 
   lazy val workflowRoutes: Route =
     // TODO: factor the top of this into a path prefix in WesServer
@@ -98,5 +98,4 @@ trait WorkflowRoutes extends JsonSupport {
       }
     }
   }
-
 }

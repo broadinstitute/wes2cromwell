@@ -1,6 +1,6 @@
 package com.verily.server
 
-import spray.json.{ DefaultJsonProtocol, JsObject, JsString, JsValue, RootJsonFormat }
+import spray.json.{ JsString, JsValue, RootJsonFormat }
 
 sealed trait WorkflowState
 

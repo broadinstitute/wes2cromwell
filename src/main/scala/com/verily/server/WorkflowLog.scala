@@ -1,6 +1,6 @@
 package com.verily.server
 
-import spray.json.{ DefaultJsonProtocol, JsObject, JsonFormat }
+import spray.json.JsObject
 
 final case class WorkflowLogEntry(
   name: Option[String],
@@ -9,13 +9,7 @@ final case class WorkflowLogEntry(
   end_time: Option[String],
   stdout: Option[String],
   stderr: Option[String],
-  exit_code: Option[Int]
-)
-
-//object WorkflowLogEntry {
-//  import DefaultJsonProtocol._
-//  implicit val workflowLogEntryFormat: JsonFormat[WorkflowLogEntry] = jsonFormat7(WorkflowLogEntry.apply)
-//}
+  exit_code: Option[Int])
 
 final case class WorkflowLog(
   workflow_id: String,
@@ -23,9 +17,4 @@ final case class WorkflowLog(
   state: WorkflowState,
   workflow_log: Option[WorkflowLogEntry],
   task_logs: Option[Seq[WorkflowLogEntry]],
-  outputs: Option[JsObject] /* WesObject */ )
-
-//object WorkflowLog {
-//  import DefaultJsonProtocol._
-//  implicit val workflowLogFormat: JsonFormat[WorkflowLog] = jsonFormat6(WorkflowLog.apply)
-//}
+  outputs: Option[JsObject])
