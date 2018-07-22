@@ -2,6 +2,7 @@ package com.verily.server
 
 import akka.actor.{ ActorRef, ActorSystem }
 import akka.event.Logging
+import akka.http.scaladsl.model.headers.Authorization
 import akka.http.scaladsl.model.{ HttpResponse, StatusCodes }
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.{ Route, StandardRoute }
@@ -29,19 +30,21 @@ trait WorkflowRoutes extends JsonSupport {
   // Required by the `ask` (?) method below
   implicit lazy val timeout = Timeout(30.seconds)
 
-  lazy val workflowRoutes: Route =
+  lazy val workflowRoutes: Route = headerValuePF({ case a: Authorization => a }) { authHeader =>
     // TODO: factor the top of this into a path prefix in WesServer
     pathPrefix("ga4gh" / "wes" / "v1" / "workflows") {
       concat(
         pathEnd {
           concat(
             get {
-              val futureWes: Future[Any] = workflowActor.ask(GetWorkflows)
+              log.info("RECEIVED GET WORKFLOWS REQUEST")
+              val futureWes: Future[Any] = workflowActor.ask(GetWorkflows(authHeader))
               handleWesResponse(futureWes)
             },
             post {
+              log.info("RECEIVED POST WORKFLOW")
               entity(as[WorkflowRequest]) { workflowRequest =>
-                val futureWes: Future[Any] = workflowActor.ask(PostWorkflow(workflowRequest))
+                val futureWes: Future[Any] = workflowActor.ask(PostWorkflow(workflowRequest, authHeader))
                 handleWesResponse(futureWes)
               }
             }
@@ -51,11 +54,11 @@ trait WorkflowRoutes extends JsonSupport {
         path(Segment) { workflowId =>
           concat(
             get {
-              val maybeWorkflow: Future[Any] = workflowActor.ask(GetWorkflow(workflowId))
+              val maybeWorkflow: Future[Any] = workflowActor.ask(GetWorkflow(workflowId, authHeader))
               handleWesResponse(maybeWorkflow)
             },
             delete {
-              val futureWes: Future[Any] = workflowActor.ask(DeleteWorkflow(workflowId))
+              val futureWes: Future[Any] = workflowActor.ask(DeleteWorkflow(workflowId, authHeader))
               handleWesResponse(futureWes)
             }
           )
@@ -63,12 +66,14 @@ trait WorkflowRoutes extends JsonSupport {
         // workflows/{workflow_id}/status
         path(Segment / "status") { workflowId =>
           get {
-            val futureWes: Future[Any] = workflowActor.ask(GetWorkflowStatus(workflowId))
+            log.info("STATUS REQUEST")
+            val futureWes: Future[Any] = workflowActor.ask(GetWorkflowStatus(workflowId, authHeader))
             handleWesResponse(futureWes)
           }
         }
       )
     }
+  }
 
   // Common handler for some Wes Responses
   // TODO: understand if I can avoid re-constructing the responses

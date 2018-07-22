@@ -18,22 +18,27 @@ import akka.stream.{ ActorMaterializer, Materializer }
 import com.verily.server.WorkflowState._
 import spray.json.{ JsObject, JsonParser }
 
+import scala.collection.immutable
+
 class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
 
-  val cromwellPath = "http://localhost:8000/api/workflows/v1"
+  val cromwellPath = "https://cromwell.caas-dev.broadinstitute.org/api/workflows/v1"
 
   implicit val materializer: Materializer = ActorMaterializer()
 
-  def getWorkflows(replyTo: ActorRef): Unit = {
+  def getWorkflows(replyTo: ActorRef, authHeader: HttpHeader): Unit = {
+    println("IN WORKFLOWACTOR GET WORKFLOW")
     val now = ZonedDateTime.now()
     val oneDayAgoString = now.minusDays(1).format(DateTimeFormatter.ISO_INSTANT).replace(":", "%3A")
     val nowString = now.format(DateTimeFormatter.ISO_INSTANT).replace(":", "%3A")
 
     val url = cromwellPath + s"/query?start=${oneDayAgoString}&end=${nowString}"
-    val request = HttpRequest(method = HttpMethods.GET, uri = url)
+    val request = HttpRequest(method = HttpMethods.GET, uri = url, headers = List(authHeader))
+    println("GET WORKFLOWS REQUEST: " + request)
     val responseFuture = Http().singleRequest(request)
     responseFuture.onComplete {
       case Success(response) => {
+        println("GET WORKFLOWS RESPONSE: " + response)
         response.status match {
           case StatusCodes.OK => {
             val bodyDataFuture: Future[String] = Unmarshal(response.entity).to[String]
@@ -51,11 +56,13 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
           case _ => replyTo ! WesResponseError("Unexpected response status", response.status.intValue())
         }
       }
-      case Failure(_) => replyTo ! WesResponseError("Http error", StatusCodes.InternalServerError.intValue)
+      case Failure(_) =>
+        replyTo ! WesResponseError("Http error", StatusCodes.InternalServerError.intValue)
     }
   }
 
-  def postWorkflow(replyTo: ActorRef, workflowRequest: WorkflowRequest): Unit = {
+  def postWorkflow(replyTo: ActorRef, workflowRequest: WorkflowRequest, authHeader: HttpHeader): Unit = {
+    println("IN POSTWORKFLOW")
     /*
      * See https://docs.google.com/document/d/11_qHPBbEg3Hr4Vs3lh3dvU0dLl1I2zt6rmNxEkW1U1U/edit#
      * for details on the workflow request mapping.
@@ -83,7 +90,7 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
     getWorkflowSourceBodyPart(workflowRequest).onComplete {
       case Success(WesResponseBodyPart(bodyPart)) => {
         parts = bodyPart :: parts
-        postRequestToCromwell(replyTo, parts)
+        postRequestToCromwell(replyTo, parts, authHeader)
       }
       case Success(WesResponseError(msg, code)) => replyTo ! WesResponseError(msg, code)
       case Success(_) => replyTo ! WesResponseError("Internal server error", StatusCodes.InternalServerError.intValue)
@@ -91,16 +98,15 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
     }
   }
 
-  def getWorkflow(replyTo: ActorRef, workflowId: String): Unit = {
+  def getWorkflow(replyTo: ActorRef, workflowId: String, authHeader: HttpHeader): Unit = {
     val url: String = cromwellPath + "/" + workflowId + "/metadata"
-    val request = HttpRequest(method = HttpMethods.GET, uri = url)
+    val request = HttpRequest(method = HttpMethods.GET, uri = url, headers = List(authHeader))
     val responseFuture = Http().singleRequest(request)
     responseFuture.onComplete {
       case Success(response) => {
         response.status match {
           case StatusCodes.OK => {
             val bodyDataFuture: Future[String] = Unmarshal(response.entity).to[String]
-
             bodyDataFuture map { bodyData =>
               replyTo ! WesResponseWorkflowMetadata(cromwellMetadataToWesWorkflowLog(bodyData))
             }
@@ -117,12 +123,14 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
     }
   }
 
-  def getWorkflowStatus(replyTo: ActorRef, workflowId: String): Unit = {
+  def getWorkflowStatus(replyTo: ActorRef, workflowId: String, authHeader: HttpHeader): Unit = {
     val url: String = cromwellPath + "/" + workflowId + "/status"
-    val request = HttpRequest(method = HttpMethods.GET, uri = url)
+    val request = HttpRequest(method = HttpMethods.GET, uri = url, headers = immutable.Seq(authHeader))
     val responseFuture = Http().singleRequest(request)
+
     responseFuture.onComplete {
       case Success(response) => {
+        println("RESPONSE IS: " + response)
         response.status match {
           case StatusCodes.OK => {
             val bodyDataFuture: Future[String] = Unmarshal(response.entity).to[String]
@@ -143,9 +151,9 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
     }
   }
 
-  def deleteWorkflow(replyTo: ActorRef, workflowId: String): Unit = {
+  def deleteWorkflow(replyTo: ActorRef, workflowId: String, authHeader: HttpHeader): Unit = {
     val url: String = cromwellPath + "/" + workflowId + "/abort"
-    val request = HttpRequest(method = HttpMethods.POST, uri = url)
+    val request = HttpRequest(method = HttpMethods.POST, uri = url, headers = List(authHeader))
     val responseFuture = Http().singleRequest(request)
     responseFuture.onComplete {
       case Success(response) => {
@@ -200,6 +208,7 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
   }
 
   def cromwellMetadataToWesWorkflowLog(json: String): WorkflowLog = {
+    // FIXME: this seems to go on way too long
     val metadata = CromwellMetadata.toCromwellMetadata(json)
 
     val workflowParams = metadata.submittedFiles.inputs map { JsonParser(_).asJsObject }
@@ -268,13 +277,15 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
     cromwellList.map(x => WesResponseStatus(x.id, cromwellToWesStatus(x.status)))
   }
 
-  def postRequestToCromwell(replyTo: ActorRef, bodyPartList: List[BodyPart]) = {
+  def postRequestToCromwell(replyTo: ActorRef, bodyPartList: List[BodyPart], authHeader: HttpHeader) = {
     val formData = FormData(Source(bodyPartList))
-    val request = HttpRequest(method = HttpMethods.POST, uri = cromwellPath, entity = formData.toEntity)
+    val request = HttpRequest(method = HttpMethods.POST, uri = cromwellPath, entity = formData.toEntity, headers = List(authHeader))
+    println("SUBMITTING THIS TO CROMIAM: " + request)
     val responseFuture = Http().singleRequest(request)
 
     responseFuture.onComplete {
       case Success(response) => {
+        println("RECEIVED THIS FROM CROMIAM: " + response)
         response.status match {
           case StatusCodes.Created => {
             val bodyDataFuture: Future[String] = Unmarshal(response.entity).to[String]

@@ -1,6 +1,7 @@
 package com.verily.server
 
 import akka.actor.{ Actor, ActorLogging, Props }
+import akka.http.scaladsl.model.{ HttpHeader, HttpRequest }
 import spray.json.JsObject
 
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -28,11 +29,11 @@ final case class ErrorResponse(
 )
 
 object WorkflowActor {
-  final case object GetWorkflows
-  final case class PostWorkflow(workflowRequest: WorkflowRequest)
-  final case class GetWorkflow(workflowId: String)
-  final case class DeleteWorkflow(workflowId: String)
-  final case class GetWorkflowStatus(workflowId: String)
+  final case class GetWorkflows(authHeader: HttpHeader)
+  final case class PostWorkflow(workflowRequest: WorkflowRequest, authHeader: HttpHeader)
+  final case class GetWorkflow(workflowId: String, authHeader: HttpHeader)
+  final case class DeleteWorkflow(workflowId: String, authHeader: HttpHeader)
+  final case class GetWorkflowStatus(workflowId: String, authHeader: HttpHeader)
 
   def props: Props = Props[WorkflowActor]
 }
@@ -42,15 +43,15 @@ class WorkflowActor extends Actor with ActorLogging {
   lazy val transmogriphy = new Transmogriphy()(context.system, global)
 
   def receive: Receive = {
-    case GetWorkflows =>
-      transmogriphy.getWorkflows(sender())
-    case PostWorkflow(workflowRequest) =>
-      transmogriphy.postWorkflow(sender(), workflowRequest)
-    case GetWorkflow(workflowId) =>
-      transmogriphy.getWorkflow(sender(), workflowId)
-    case DeleteWorkflow(workflowId) =>
-      transmogriphy.deleteWorkflow(sender(), workflowId)
-    case GetWorkflowStatus(workflowId) =>
-      transmogriphy.getWorkflowStatus(sender(), workflowId)
+    case GetWorkflows(authHeader) =>
+      transmogriphy.getWorkflows(sender(), authHeader)
+    case PostWorkflow(workflowRequest, authHeader) =>
+      transmogriphy.postWorkflow(sender(), workflowRequest, authHeader)
+    case GetWorkflow(workflowId, authHeader) =>
+      transmogriphy.getWorkflow(sender(), workflowId, authHeader)
+    case DeleteWorkflow(workflowId, authHeader) =>
+      transmogriphy.deleteWorkflow(sender(), workflowId, authHeader)
+    case GetWorkflowStatus(workflowId, authHeader) =>
+      transmogriphy.getWorkflowStatus(sender(), workflowId, authHeader)
   }
 }
