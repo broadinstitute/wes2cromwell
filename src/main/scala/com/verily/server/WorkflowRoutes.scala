@@ -64,7 +64,6 @@ trait WorkflowRoutes extends JsonSupport {
         // workflows/{workflow_id}/status
         path(Segment / "status") { workflowId =>
           get {
-            log.info("STATUS REQUEST")
             val futureWes: Future[Any] = workflowActor.ask(GetWorkflowStatus(workflowId, authHeader))
             handleWesResponse(futureWes)
           }
