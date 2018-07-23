@@ -30,7 +30,7 @@ trait WorkflowRoutes extends JsonSupport {
   // Required by the `ask` (?) method below
   implicit lazy val timeout = Timeout(30.seconds)
 
-  lazy val workflowRoutes: Route = headerValuePF({ case a: Authorization => a }) { authHeader =>
+  lazy val workflowRoutes: Route = headerValuePF({ case a: Authorization => a }) { authHeader => // FIXME: How to make this optional?
     // TODO: factor the top of this into a path prefix in WesServer
     pathPrefix("ga4gh" / "wes" / "v1" / "workflows") {
       concat(

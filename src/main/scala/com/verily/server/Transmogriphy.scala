@@ -22,7 +22,7 @@ import scala.collection.immutable
 
 class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
 
-  val cromwellPath = "https://cromwell.caas-dev.broadinstitute.org/api/workflows/v1"
+  val cromwellPath = "http://localhost:8000/api/workflows/v1" // "https://cromwell.caas-dev.broadinstitute.org/api/workflows/v1"
 
   implicit val materializer: Materializer = ActorMaterializer()
 
