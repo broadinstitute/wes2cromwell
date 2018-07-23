@@ -37,12 +37,10 @@ trait WorkflowRoutes extends JsonSupport {
         pathEnd {
           concat(
             get {
-              log.info("RECEIVED GET WORKFLOWS REQUEST")
               val futureWes: Future[Any] = workflowActor.ask(GetWorkflows(authHeader))
               handleWesResponse(futureWes)
             },
             post {
-              log.info("RECEIVED POST WORKFLOW")
               entity(as[WorkflowRequest]) { workflowRequest =>
                 val futureWes: Future[Any] = workflowActor.ask(PostWorkflow(workflowRequest, authHeader))
                 handleWesResponse(futureWes)
