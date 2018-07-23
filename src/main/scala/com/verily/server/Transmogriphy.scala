@@ -22,23 +22,20 @@ import scala.collection.immutable
 
 class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
 
-  val cromwellPath = "http://localhost:8000/api/workflows/v1" // "https://cromwell.caas-dev.broadinstitute.org/api/workflows/v1"
+  val cromwellPath = "https://cromwell.caas-dev.broadinstitute.org/api/workflows/v1"
 
   implicit val materializer: Materializer = ActorMaterializer()
 
   def getWorkflows(replyTo: ActorRef, authHeader: HttpHeader): Unit = {
-    println("IN WORKFLOWACTOR GET WORKFLOW")
     val now = ZonedDateTime.now()
     val oneDayAgoString = now.minusDays(1).format(DateTimeFormatter.ISO_INSTANT).replace(":", "%3A")
     val nowString = now.format(DateTimeFormatter.ISO_INSTANT).replace(":", "%3A")
 
     val url = cromwellPath + s"/query?start=${oneDayAgoString}&end=${nowString}"
     val request = HttpRequest(method = HttpMethods.GET, uri = url, headers = List(authHeader))
-    println("GET WORKFLOWS REQUEST: " + request)
     val responseFuture = Http().singleRequest(request)
     responseFuture.onComplete {
       case Success(response) => {
-        println("GET WORKFLOWS RESPONSE: " + response)
         response.status match {
           case StatusCodes.OK => {
             val bodyDataFuture: Future[String] = Unmarshal(response.entity).to[String]
@@ -62,7 +59,6 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
   }
 
   def postWorkflow(replyTo: ActorRef, workflowRequest: WorkflowRequest, authHeader: HttpHeader): Unit = {
-    println("IN POSTWORKFLOW")
     /*
      * See https://docs.google.com/document/d/11_qHPBbEg3Hr4Vs3lh3dvU0dLl1I2zt6rmNxEkW1U1U/edit#
      * for details on the workflow request mapping.
@@ -130,7 +126,6 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
 
     responseFuture.onComplete {
       case Success(response) => {
-        println("RESPONSE IS: " + response)
         response.status match {
           case StatusCodes.OK => {
             val bodyDataFuture: Future[String] = Unmarshal(response.entity).to[String]
@@ -280,12 +275,10 @@ class Transmogriphy(implicit system: ActorSystem, ec: ExecutionContext) {
   def postRequestToCromwell(replyTo: ActorRef, bodyPartList: List[BodyPart], authHeader: HttpHeader) = {
     val formData = FormData(Source(bodyPartList))
     val request = HttpRequest(method = HttpMethods.POST, uri = cromwellPath, entity = formData.toEntity, headers = List(authHeader))
-    println("SUBMITTING THIS TO CROMIAM: " + request)
     val responseFuture = Http().singleRequest(request)
 
     responseFuture.onComplete {
       case Success(response) => {
-        println("RECEIVED THIS FROM CROMIAM: " + response)
         response.status match {
           case StatusCodes.Created => {
             val bodyDataFuture: Future[String] = Unmarshal(response.entity).to[String]
